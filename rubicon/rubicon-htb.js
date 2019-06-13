@@ -310,36 +310,33 @@ function RubiconModule(configs) {
      * @return {Object} - example {p1: 'foo;;bar', p2: 'test'}
      */
     function combineSlotUrlParams(aSlotUrlParams) {
-    
-    // if only have params for one slot, return those params
-    if (aSlotUrlParams.length === 1) {
-      return aSlotUrlParams[0];
-    }
-
-    // reduce param values from all slot objects into an array of values in a single object
-    const oCombinedSlotUrlParams = aSlotUrlParams.reduce(function(oCombinedParams, oSlotUrlParams, iIndex) {
-      Object.keys(oSlotUrlParams).forEach(function(param) {
-        if (!oCombinedParams.hasOwnProperty(param)) {
-          oCombinedParams[param] = new Array(aSlotUrlParams.length); // initialize array;
+        /* If only have params for one slot, return those params */
+        if (aSlotUrlParams.length === 1) {
+            return aSlotUrlParams[0];
         }
-        // insert into the proper element of the array
-        oCombinedParams[param].splice(iIndex, 1, oSlotUrlParams[param]);
-      });
 
-      return oCombinedParams;
-    }, {});
+        var oCombinedSlotUrlParams = aSlotUrlParams.reduce(function (oCombinedParams, oSlotUrlParams, iIndex) {
+            Object.keys(oSlotUrlParams)
+                .forEach(function (param) {
+                    if (!oCombinedParams.hasOwnProperty(param)) {
+                        oCombinedParams[param] = new Array(aSlotUrlParams.length);
+                    }
+                    oCombinedParams[param].splice(iIndex, 1, oSlotUrlParams[param]);
+                });
 
-    // convert arrays into semicolon delimited strings
-    const re = new RegExp('^([^;]*)(;\\1)+$'); // regex to test for duplication
+            return oCombinedParams;
+        }, {});
 
-    Object.keys(oCombinedSlotUrlParams).forEach(function(param) {
-      const sValues = oCombinedSlotUrlParams[param].join(';');
-      // consolidate param values into one value if they are all the same
-      const match = sValues.match(re);
-      oCombinedSlotUrlParams[param] = match ? match[1] : sValues;
-    });
+        var re = new RegExp('^([^;]*)(;\\1)+$');
 
-    return oCombinedSlotUrlParams;
+        Object.keys(oCombinedSlotUrlParams)
+            .forEach(function (param) {
+                var sValues = oCombinedSlotUrlParams[param].join(';');
+                var match = sValues.match(re);
+                oCombinedSlotUrlParams[param] = match ? match[1] : sValues;
+            });
+
+        return oCombinedSlotUrlParams;
     }
 
     /**
@@ -351,7 +348,6 @@ function RubiconModule(configs) {
      */
 
     function __generateRequestObj(returnParcels) {
-
         //? if (DEBUG){
         var results = Inspector.validate({
             type: 'array',
@@ -422,14 +418,7 @@ function RubiconModule(configs) {
         }
         //? }
 
-        var callbackId = System.generateUniqueId();
-
-        const combinedSlotParams = combineSlotUrlParams(returnParcels.map(parcel => {
-            return createSlotParams(parcel);
-        }));
-
         function createSlotParams(parcel) {
-
             var slotFirstPartyData = {};
             var pageFirstPartyData = {};
 
@@ -529,12 +518,17 @@ function RubiconModule(configs) {
             if (rubiSizeIds.length > 1) {
                 /* eslint-disable camelcase */
                 queryObj.alt_size_ids = rubiSizeIds.slice(1)
-                    .join(',') || undefined;
+                    .join(',');
                 /* eslint-enable camelcase */
             }
 
             return queryObj;
         }
+
+        var callbackId = System.generateUniqueId();
+        var combinedSlotParams = combineSlotUrlParams(returnParcels.map(function (parcel) {
+            return createSlotParams(parcel);
+        }));
 
         combinedSlotParams.slots = returnParcels.length;
 
@@ -591,8 +585,8 @@ function RubiconModule(configs) {
         }
 
         if (adResponse && adResponse.ads && adResponse.ads.length > 0) {
-            for (var i = 0; i < adResponse.ads; i++) {
-                bids = bids.concat(adResponse.ads[i]);
+            for (var m = 0; m < adResponse.ads; m++) {
+                bids = bids.concat(adResponse.ads[m]);
             }
         }
 
@@ -601,7 +595,6 @@ function RubiconModule(configs) {
             var curBid;
 
             for (var i = 0; i < bids.length; i++) {
-
                 if (i === j) {
                     curBid = bids[i];
                 } else {
@@ -677,8 +670,8 @@ function RubiconModule(configs) {
                         var rubiTargeting = curBid.targeting;
                         rubiSizeId = curBid.size_id;
 
-                        for (var j = 0; j < rubiTargeting.length; j++) {
-                            curReturnParcel.targeting[rubiTargeting[j].key] = rubiTargeting[j].values;
+                        for (var k = 0; k < rubiTargeting.length; k++) {
+                            curReturnParcel.targeting[rubiTargeting[k].key] = rubiTargeting[k].values;
                         }
                     }
                     /* eslint-disable camelcase */
@@ -694,16 +687,19 @@ function RubiconModule(configs) {
 
                         if (curBid.targeting) {
                             var rubiTargetingDeal = curBid.targeting;
-                            for (var k = 0; k < rubiTargetingDeal.length; k++) {
-                                curReturnParcel.targeting[rubiTargetingDeal[k].key] = rubiTargetingDeal[k].values;
+                            /* eslint-disable max-depth */
+                            for (var l = 0; l < rubiTargetingDeal.length; l++) {
+                                curReturnParcel.targeting[rubiTargetingDeal[l].key] = rubiTargetingDeal[l].values;
                             }
+                            /* eslint-enable max-depth */
                         }
                     }
 
                     /* Set the om key as long as they sent _something_ in the cpm, even if it was zero */
 
                     if (curBid.hasOwnProperty('cpm')) {
-                        curReturnParcel.targeting[__baseClass._configs.targetingKeys.om] = [sizeKey + '_' + targetingCpm];
+                        curReturnParcel.targeting[__baseClass._configs.targetingKeys.om]
+                        = [sizeKey + '_' + targetingCpm];
                     }
 
                     curReturnParcel.targeting[__baseClass._configs.targetingKeys.id] = [curReturnParcel.requestId];
@@ -728,7 +724,7 @@ function RubiconModule(configs) {
                     dealId: bidDealId ? bidDealId : '',
                     timeOfExpiry: __profile.features.demandExpiry.enabled ? __profile.features.demandExpiry.value + System.now() : 0 // eslint-disable-line
                 });
-                
+
                 //? if(FEATURES.INTERNAL_RENDER) {
                 curReturnParcel.targeting.pubKitAdId = pubKitAdId;
                 //? }
@@ -803,22 +799,26 @@ function RubiconModule(configs) {
      * ---------------------------------- */
 
     (function __constructor() {
-
         /* Check if all siteId are similar and < 10 and activate SRA if true */
         function getArchitecture() {
             var testSRA = {};
             var SRA_BID_LIMIT = 10;
 
             for (var key in configs.xSlots) {
-                testSRA[configs.xSlots[key]['siteId']] = (+testSRA[configs.xSlots[key]['siteId']] || 0) + 1;  
+                if (configs.xSlots[key].siteId !== null) {
+                    testSRA[configs.xSlots[key].siteId] = (+Number(testSRA[configs.xSlots[key].siteId]) || 0) + 1;
+                }
             }
 
-            if (configs.SRA && (Object.keys(testSRA).length == 1) && (Object.values(testSRA)[0] < SRA_BID_LIMIT+1) ) {
+            if (configs.SRA && (Object.keys(testSRA).length === 1) && (Object.values(testSRA)[0] < SRA_BID_LIMIT + 1)) {
+                /* eslint-disable no-console */
                 console.warn('SiteIDs are similar, SRA enabled');
+                /* eslint-enable no-console */
+
                 return Partner.Architectures.SRA;
-            } else {
-                return Partner.Architectures.MRA;
             }
+
+            return Partner.Architectures.MRA;
         }
 
         EventsService = SpaceCamp.services.EventsService;
