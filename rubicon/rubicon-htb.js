@@ -304,6 +304,45 @@ function RubiconModule(configs) {
     }
 
     /**
+     * @summary combines param values from an array of slots into a single semicolon delineated value
+     * or just one value if they are all the same.
+     * @param {Object[]} aSlotUrlParams - example [{p1: 'foo', p2: 'test'}, {p2: 'test'}, {p1: 'bar', p2: 'test'}]
+     * @return {Object} - example {p1: 'foo;;bar', p2: 'test'}
+     */
+    function combineSlotUrlParams(aSlotUrlParams) {
+    
+    // if only have params for one slot, return those params
+    if (aSlotUrlParams.length === 1) {
+      return aSlotUrlParams[0];
+    }
+
+    // reduce param values from all slot objects into an array of values in a single object
+    const oCombinedSlotUrlParams = aSlotUrlParams.reduce(function(oCombinedParams, oSlotUrlParams, iIndex) {
+      Object.keys(oSlotUrlParams).forEach(function(param) {
+        if (!oCombinedParams.hasOwnProperty(param)) {
+          oCombinedParams[param] = new Array(aSlotUrlParams.length); // initialize array;
+        }
+        // insert into the proper element of the array
+        oCombinedParams[param].splice(iIndex, 1, oSlotUrlParams[param]);
+      });
+
+      return oCombinedParams;
+    }, {});
+
+    // convert arrays into semicolon delimited strings
+    const re = new RegExp('^([^;]*)(;\\1)+$'); // regex to test for duplication
+
+    Object.keys(oCombinedSlotUrlParams).forEach(function(param) {
+      const sValues = oCombinedSlotUrlParams[param].join(';');
+      // consolidate param values into one value if they are all the same
+      const match = sValues.match(re);
+      oCombinedSlotUrlParams[param] = match ? match[1] : sValues;
+    });
+
+    return oCombinedSlotUrlParams;
+    }
+
+    /**
      * Generates the request URL to the endpoint for the xSlots in the given
      * returnParcels.
      *
@@ -312,10 +351,11 @@ function RubiconModule(configs) {
      */
 
     function __generateRequestObj(returnParcels) {
+
         //? if (DEBUG){
         var results = Inspector.validate({
             type: 'array',
-            exactLength: 1,
+            minLength: 1,
             items: {
                 type: 'object',
                 properties: {
@@ -383,113 +423,124 @@ function RubiconModule(configs) {
         //? }
 
         var callbackId = System.generateUniqueId();
-        var parcel = returnParcels[0];
-        var slotFirstPartyData = {};
-        var pageFirstPartyData = {};
 
-        if (parcel.firstPartyData && parcel.firstPartyData.rubicon) {
-            slotFirstPartyData = parcel.firstPartyData.rubicon;
-        } else if (parcel.xSlotRef.slotFpd) {
-            slotFirstPartyData = __transformFirstPartyData(parcel.xSlotRef.slotFpd);
-        }
+        const combinedSlotParams = combineSlotUrlParams(returnParcels.map(parcel => {
+            return createSlotParams(parcel);
+        }));
 
-        if (__pageFirstPartyData) {
-            pageFirstPartyData = __pageFirstPartyData;
-        } else if (configs.partnerFpd) {
-            pageFirstPartyData = __transformFirstPartyData(configs.partnerFpd);
-        }
+        function createSlotParams(parcel) {
 
-        var rubiSizeIds = __mapSizesToRubiconSizeIds(parcel.xSlotRef.sizes);
-        var referrer = Browser.getPageUrl();
+            var slotFirstPartyData = {};
+            var pageFirstPartyData = {};
 
-        var gdprConsent = ComplianceService.gdpr && ComplianceService.gdpr.getConsent();
-        var privacyEnabled = ComplianceService.isPrivacyEnabled();
-        /* eslint-disable camelcase */
-        var queryObj = {
-            account_id: configs.accountId,
-            size_id: rubiSizeIds[0],
-            p_pos: slotFirstPartyData.position ? slotFirstPartyData.position : 'btf',
-            rp_floor: 0.01,
-            rf: referrer ? referrer : '',
-            p_screen_res: Browser.getScreenWidth() + 'x' + Browser.getScreenHeight(),
-            site_id: parcel.xSlotRef.siteId,
-            zone_id: parcel.xSlotRef.zoneId,
-            kw: 'rp.fastlane',
-            tk_flint: 'index',
-            rand: Math.random(),
-            dt: _getDigiTrustQueryParams()
-        };
-        /* eslint-enable camelcase */
-        if (gdprConsent && privacyEnabled && typeof gdprConsent === 'object') {
-            if (typeof gdprConsent.applies === 'boolean') {
-                queryObj.gdpr = Number(gdprConsent.applies);
+            if (parcel.firstPartyData && parcel.firstPartyData.rubicon) {
+                slotFirstPartyData = parcel.firstPartyData.rubicon;
+            } else if (parcel.xSlotRef.slotFpd) {
+                slotFirstPartyData = __transformFirstPartyData(parcel.xSlotRef.slotFpd);
             }
+
+            if (__pageFirstPartyData) {
+                pageFirstPartyData = __pageFirstPartyData;
+            } else if (configs.partnerFpd) {
+                pageFirstPartyData = __transformFirstPartyData(configs.partnerFpd);
+            }
+
+            var rubiSizeIds = __mapSizesToRubiconSizeIds(parcel.xSlotRef.sizes);
+            var referrer = Browser.getPageUrl();
+
+            var gdprConsent = ComplianceService.gdpr && ComplianceService.gdpr.getConsent();
+            var privacyEnabled = ComplianceService.isPrivacyEnabled();
             /* eslint-disable camelcase */
-            queryObj.gdpr_consent = gdprConsent.consentString;
+            var queryObj = {
+                account_id: configs.accountId,
+                size_id: rubiSizeIds[0],
+                p_pos: slotFirstPartyData.position ? slotFirstPartyData.position : 'btf',
+                rp_floor: 0.01,
+                rf: referrer ? referrer : '',
+                p_screen_res: Browser.getScreenWidth() + 'x' + Browser.getScreenHeight(),
+                site_id: parcel.xSlotRef.siteId,
+                zone_id: parcel.xSlotRef.zoneId,
+                kw: 'rp.fastlane',
+                tk_flint: 'index',
+                rand: Math.random(),
+                dt: _getDigiTrustQueryParams()
+            };
             /* eslint-enable camelcase */
-        }
-
-        for (var pageInv in pageFirstPartyData.inventory) {
-            if (!pageFirstPartyData.inventory.hasOwnProperty(pageInv)) {
-                continue;
-            }
-            queryObj['tg_i.' + pageInv] = pageFirstPartyData.inventory[pageInv].toString();
-        }
-
-        for (var slotInv in slotFirstPartyData.inventory) {
-            if (!slotFirstPartyData.inventory.hasOwnProperty(slotInv)) {
-                continue;
+            if (gdprConsent && privacyEnabled && typeof gdprConsent === 'object') {
+                if (typeof gdprConsent.applies === 'boolean') {
+                    queryObj.gdpr = Number(gdprConsent.applies);
+                }
+                /* eslint-disable camelcase */
+                queryObj.gdpr_consent = gdprConsent.consentString;
+                /* eslint-enable camelcase */
             }
 
-            if (queryObj.hasOwnProperty('tg_i.' + slotInv)) {
-                queryObj['tg_i.' + slotInv] += ',' + slotFirstPartyData.inventory[slotInv].toString();
-            } else {
-                queryObj['tg_i.' + slotInv] = slotFirstPartyData.inventory[slotInv].toString();
-            }
-        }
-
-        for (var pageVis in pageFirstPartyData.visitor) {
-            if (!pageFirstPartyData.visitor.hasOwnProperty(pageVis)) {
-                continue;
-            }
-            queryObj['tg_v.' + pageVis] = pageFirstPartyData.visitor[pageVis].toString();
-        }
-
-        for (var slotVis in slotFirstPartyData.visitor) {
-            if (!slotFirstPartyData.visitor.hasOwnProperty(slotVis)) {
-                continue;
+            for (var pageInv in pageFirstPartyData.inventory) {
+                if (!pageFirstPartyData.inventory.hasOwnProperty(pageInv)) {
+                    continue;
+                }
+                queryObj['tg_i.' + pageInv] = pageFirstPartyData.inventory[pageInv].toString();
             }
 
-            if (queryObj.hasOwnProperty('tg_v.' + slotVis)) {
-                queryObj['tg_v.' + slotVis] += ',' + slotFirstPartyData.visitor[slotVis].toString();
-            } else {
-                queryObj['tg_v.' + slotVis] = slotFirstPartyData.visitor[slotVis].toString();
+            for (var slotInv in slotFirstPartyData.inventory) {
+                if (!slotFirstPartyData.inventory.hasOwnProperty(slotInv)) {
+                    continue;
+                }
+
+                if (queryObj.hasOwnProperty('tg_i.' + slotInv)) {
+                    queryObj['tg_i.' + slotInv] += ',' + slotFirstPartyData.inventory[slotInv].toString();
+                } else {
+                    queryObj['tg_i.' + slotInv] = slotFirstPartyData.inventory[slotInv].toString();
+                }
             }
-        }
-        var keywords = [];
 
-        if (pageFirstPartyData.keywords) {
-            keywords = keywords.concat(pageFirstPartyData.keywords);
+            for (var pageVis in pageFirstPartyData.visitor) {
+                if (!pageFirstPartyData.visitor.hasOwnProperty(pageVis)) {
+                    continue;
+                }
+                queryObj['tg_v.' + pageVis] = pageFirstPartyData.visitor[pageVis].toString();
+            }
+
+            for (var slotVis in slotFirstPartyData.visitor) {
+                if (!slotFirstPartyData.visitor.hasOwnProperty(slotVis)) {
+                    continue;
+                }
+
+                if (queryObj.hasOwnProperty('tg_v.' + slotVis)) {
+                    queryObj['tg_v.' + slotVis] += ',' + slotFirstPartyData.visitor[slotVis].toString();
+                } else {
+                    queryObj['tg_v.' + slotVis] = slotFirstPartyData.visitor[slotVis].toString();
+                }
+            }
+            var keywords = [];
+
+            if (pageFirstPartyData.keywords) {
+                keywords = keywords.concat(pageFirstPartyData.keywords);
+            }
+
+            if (slotFirstPartyData.keywords) {
+                keywords = keywords.concat(slotFirstPartyData.keywords);
+            }
+
+            if (keywords.length > 0) {
+                queryObj.kw += ',' + keywords.toString();
+            }
+
+            if (rubiSizeIds.length > 1) {
+                /* eslint-disable camelcase */
+                queryObj.alt_size_ids = rubiSizeIds.slice(1)
+                    .join(',') || undefined;
+                /* eslint-enable camelcase */
+            }
+
+            return queryObj;
         }
 
-        if (slotFirstPartyData.keywords) {
-            keywords = keywords.concat(slotFirstPartyData.keywords);
-        }
-
-        if (keywords.length > 0) {
-            queryObj.kw += ',' + keywords.toString();
-        }
-
-        if (rubiSizeIds.length > 1) {
-            /* eslint-disable camelcase */
-            queryObj.alt_size_ids = rubiSizeIds.slice(1)
-                .join(',');
-            /* eslint-enable camelcase */
-        }
+        combinedSlotParams.slots = returnParcels.length;
 
         return {
             url: __baseUrl,
-            data: queryObj,
+            data: combinedSlotParams,
             callbackId: callbackId
         };
     }
@@ -539,133 +590,149 @@ function RubiconModule(configs) {
             returnParcels[0].pass = true;
         }
 
-        for (var i = 0; i < bids.length; i++) {
-            var curReturnParcel;
-
-            /* A rubicon slot may have more than one size, so we might need to return more than
-               one parcel */
-            if (i === 0) {
-                curReturnParcel = returnParcels[0];
-
-                /* Fill out the other required headerstats info from the parcel */
-                headerStatsInfo.htSlotId = curReturnParcel.htSlot.getId();
-                headerStatsInfo.requestId = curReturnParcel.requestId;
-                headerStatsInfo.xSlotNames = [curReturnParcel.xSlotName];
-            } else {
-                curReturnParcel = {
-                    partnerId: returnParcels[0].partnerId,
-                    htSlot: returnParcels[0].htSlot,
-                    ref: returnParcels[0].ref,
-                    xSlotRef: returnParcels[0].xSlotRef,
-                    xSlotName: returnParcels[0].xSlotName,
-                    requestId: returnParcels[0].requestId
-                };
-
-                returnParcels.push(curReturnParcel);
+        if (adResponse && adResponse.ads && adResponse.ads.length > 0) {
+            for (var i = 0; i < adResponse.ads; i++) {
+                bids = bids.concat(adResponse.ads[i]);
             }
+        }
 
-            var bidPrice = bids[i].cpm || 0;
+        for (var j = 0; j < returnParcels.length; j++) {
+            var curReturnParcel = returnParcels[j];
+            var curBid;
 
-            if (bids[i].status !== 'ok' || !Utilities.isNumber(bidPrice) || bidPrice <= 0) {
-                //? if (DEBUG) {
-                Scribe.info(__profile.partnerId
-                    + ' returned no demand for { zoneId: '
-                    + curReturnParcel.xSlotRef.zoneId
-                    + ' }.');
-                //? }
+            for (var i = 0; i < bids.length; i++) {
 
-                curReturnParcel.pass = true;
-
-                continue;
-            }
-
-            bidReceived = true;
-
-            var bidDealId = bids[i].deal || '';
-            var bidSize = __mapRubiconSizeIdToSize(bids[i].size_id);
-            var bidCreative = '<html><head><scr'
-                + 'ipt type="text/javascript">inDapIF=true;</scr'
-                + 'ipt>'
-                + '</head><body style="margin : 0; padding: 0;"><!-- Rubicon Project Ad Tag -->'
-                + '<div data-rp-impression-id="'
-                + bids[i].impression_id
-                + '">'
-                + '<scr'
-                + 'ipt type="text/javascript">'
-                + bids[i].script
-                + '</scr'
-                + 'ipt></div></body></html>';
-
-            curReturnParcel.size = bidSize;
-            curReturnParcel.targetingType = 'slot';
-            curReturnParcel.targeting = {};
-
-            var targetingCpm = '';
-            var rubiSizeId = '';
-
-            //? if(FEATURES.GPT_LINE_ITEMS) {
-            targetingCpm = __baseClass._bidTransformers.targeting.apply(bidPrice);
-
-            if (__baseClass._configs.lineItemType === Constants.LineItemTypes.CUSTOM) {
-                if (bids[i].targeting) {
-                    var rubiTargeting = bids[i].targeting;
-                    rubiSizeId = bids[i].size_id;
-
-                    for (var j = 0; j < rubiTargeting.length; j++) {
-                        curReturnParcel.targeting[rubiTargeting[j].key] = rubiTargeting[j].values;
-                    }
+                if (i === j) {
+                    curBid = bids[i];
+                } else {
+                    continue;
                 }
-                /* eslint-disable camelcase */
-                curReturnParcel.targeting.rpfl_elemid = [curReturnParcel.requestId];
-                /* eslint-enable camelcase */
-            } else {
-                var sizeKey = Size.arrayToString(curReturnParcel.size);
 
-                if (bidDealId) {
-                    curReturnParcel.targeting[__baseClass._configs.targetingKeys.pm] = [sizeKey + '_' + bidDealId];
+                /* A rubicon slot may have more than one size, so we might need to return more than
+                   one parcel */
+                if (i === 0) {
+                    curReturnParcel = returnParcels[0];
 
-                    /* Set the custom KVPs for deal only so Rubicon handle tier deal line items */
+                    /* Fill out the other required headerstats info from the parcel */
+                    headerStatsInfo.htSlotId = curReturnParcel.htSlot.getId();
+                    headerStatsInfo.requestId = curReturnParcel.requestId;
+                    headerStatsInfo.xSlotNames = [curReturnParcel.xSlotName];
+                } else {
+                    curReturnParcel = {
+                        partnerId: returnParcels[i].partnerId,
+                        htSlot: returnParcels[i].htSlot,
+                        ref: returnParcels[i].ref,
+                        xSlotRef: returnParcels[i].xSlotRef,
+                        xSlotName: returnParcels[i].xSlotName,
+                        requestId: returnParcels[i].requestId
+                    };
 
-                    if (bids[i].targeting) {
-                        var rubiTargetingDeal = bids[i].targeting;
-                        for (var k = 0; k < rubiTargetingDeal.length; k++) {
-                            curReturnParcel.targeting[rubiTargetingDeal[k].key] = rubiTargetingDeal[k].values;
+                    returnParcels.push(curReturnParcel);
+                }
+
+                var bidPrice = curBid.cpm || 0;
+
+                if (curBid.status !== 'ok' || !Utilities.isNumber(bidPrice) || bidPrice <= 0) {
+                    //? if (DEBUG) {
+                    Scribe.info(__profile.partnerId
+                        + ' returned no demand for { zoneId: '
+                        + curReturnParcel.xSlotRef.zoneId
+                        + ' }.');
+                    //? }
+
+                    curReturnParcel.pass = true;
+
+                    continue;
+                }
+
+                bidReceived = true;
+
+                var bidDealId = curBid.deal || '';
+                var bidSize = __mapRubiconSizeIdToSize(curBid.size_id);
+                var bidCreative = '<html><head><scr'
+                    + 'ipt type="text/javascript">inDapIF=true;</scr'
+                    + 'ipt>'
+                    + '</head><body style="margin : 0; padding: 0;"><!-- Rubicon Project Ad Tag -->'
+                    + '<div data-rp-impression-id="'
+                    + curBid.impression_id
+                    + '">'
+                    + '<scr'
+                    + 'ipt type="text/javascript">'
+                    + curBid.script
+                    + '</scr'
+                    + 'ipt></div></body></html>';
+
+                curReturnParcel.size = bidSize;
+                curReturnParcel.targetingType = 'slot';
+                curReturnParcel.targeting = {};
+
+                var targetingCpm = '';
+                var rubiSizeId = '';
+
+                //? if(FEATURES.GPT_LINE_ITEMS) {
+                targetingCpm = __baseClass._bidTransformers.targeting.apply(bidPrice);
+
+                if (__baseClass._configs.lineItemType === Constants.LineItemTypes.CUSTOM) {
+                    if (curBid.targeting) {
+                        var rubiTargeting = curBid.targeting;
+                        rubiSizeId = curBid.size_id;
+
+                        for (var j = 0; j < rubiTargeting.length; j++) {
+                            curReturnParcel.targeting[rubiTargeting[j].key] = rubiTargeting[j].values;
                         }
                     }
+                    /* eslint-disable camelcase */
+                    curReturnParcel.targeting.rpfl_elemid = [curReturnParcel.requestId];
+                    /* eslint-enable camelcase */
+                } else {
+                    var sizeKey = Size.arrayToString(curReturnParcel.size);
+
+                    if (bidDealId) {
+                        curReturnParcel.targeting[__baseClass._configs.targetingKeys.pm] = [sizeKey + '_' + bidDealId];
+
+                        /* Set the custom KVPs for deal only so Rubicon handle tier deal line items */
+
+                        if (curBid.targeting) {
+                            var rubiTargetingDeal = curBid.targeting;
+                            for (var k = 0; k < rubiTargetingDeal.length; k++) {
+                                curReturnParcel.targeting[rubiTargetingDeal[k].key] = rubiTargetingDeal[k].values;
+                            }
+                        }
+                    }
+
+                    /* Set the om key as long as they sent _something_ in the cpm, even if it was zero */
+
+                    if (curBid.hasOwnProperty('cpm')) {
+                        curReturnParcel.targeting[__baseClass._configs.targetingKeys.om] = [sizeKey + '_' + targetingCpm];
+                    }
+
+                    curReturnParcel.targeting[__baseClass._configs.targetingKeys.id] = [curReturnParcel.requestId];
                 }
+                //? }
 
-                /* Set the om key as long as they sent _something_ in the cpm, even if it was zero */
+                //? if(FEATURES.RETURN_CREATIVE) {
+                curReturnParcel.adm = bidCreative;
+                //? }
 
-                if (bids[i].hasOwnProperty('cpm')) {
-                    curReturnParcel.targeting[__baseClass._configs.targetingKeys.om] = [sizeKey + '_' + targetingCpm];
-                }
+                //? if(FEATURES.RETURN_PRICE) {
+                curReturnParcel.price = Number(__baseClass._bidTransformers.price.apply(bidPrice));
+                //? }
 
-                curReturnParcel.targeting[__baseClass._configs.targetingKeys.id] = [curReturnParcel.requestId];
+                var pubKitAdId = RenderService.registerAd({
+                    sessionId: sessionId,
+                    partnerId: __profile.partnerId,
+                    adm: bidCreative,
+                    requestId: curReturnParcel.requestId,
+                    size: rubiSizeId ? rubiSizeId : curReturnParcel.size,
+                    price: targetingCpm ? targetingCpm : '',
+                    dealId: bidDealId ? bidDealId : '',
+                    timeOfExpiry: __profile.features.demandExpiry.enabled ? __profile.features.demandExpiry.value + System.now() : 0 // eslint-disable-line
+                });
+                
+                //? if(FEATURES.INTERNAL_RENDER) {
+                curReturnParcel.targeting.pubKitAdId = pubKitAdId;
+                //? }
             }
-            //? }
-
-            //? if(FEATURES.RETURN_CREATIVE) {
-            curReturnParcel.adm = bidCreative;
-            //? }
-
-            //? if(FEATURES.RETURN_PRICE) {
-            curReturnParcel.price = Number(__baseClass._bidTransformers.price.apply(bidPrice));
-            //? }
-
-            var pubKitAdId = RenderService.registerAd({
-                sessionId: sessionId,
-                partnerId: __profile.partnerId,
-                adm: bidCreative,
-                requestId: curReturnParcel.requestId,
-                size: rubiSizeId ? rubiSizeId : curReturnParcel.size,
-                price: targetingCpm ? targetingCpm : '',
-                dealId: bidDealId ? bidDealId : '',
-                timeOfExpiry: __profile.features.demandExpiry.enabled ? __profile.features.demandExpiry.value + System.now() : 0 // eslint-disable-line
-            });
-
-            //? if(FEATURES.INTERNAL_RENDER) {
-            curReturnParcel.targeting.pubKitAdId = pubKitAdId;
-            //? }
         }
 
         if (__profile.enabledAnalytics.requestTime) {
@@ -736,6 +803,24 @@ function RubiconModule(configs) {
      * ---------------------------------- */
 
     (function __constructor() {
+
+        /* Check if all siteId are similar and < 10 and activate SRA if true */
+        function getArchitecture() {
+            var testSRA = {};
+            var SRA_BID_LIMIT = 10;
+
+            for (var key in configs.xSlots) {
+                testSRA[configs.xSlots[key]['siteId']] = (+testSRA[configs.xSlots[key]['siteId']] || 0) + 1;  
+            }
+
+            if (configs.SRA && (Object.keys(testSRA).length == 1) && (Object.values(testSRA)[0] < SRA_BID_LIMIT+1) ) {
+                console.warn('SiteIDs are similar, SRA enabled');
+                return Partner.Architectures.SRA;
+            } else {
+                return Partner.Architectures.MRA;
+            }
+        }
+
         EventsService = SpaceCamp.services.EventsService;
         RenderService = SpaceCamp.services.RenderService;
         ComplianceService = SpaceCamp.services.ComplianceService;
@@ -767,7 +852,7 @@ function RubiconModule(configs) {
             bidUnitInCents: 100,
             lineItemType: Constants.LineItemTypes.ID_AND_SIZE,
             callbackType: Partner.CallbackTypes.NONE,
-            architecture: Partner.Architectures.MRA,
+            architecture: getArchitecture(),
             requestType: Partner.RequestTypes.AJAX
         };
 
